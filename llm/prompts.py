@@ -1,7 +1,7 @@
 CV_STRUCTURED_PROMPT = """You are an expert CV analyst. Read the provided CV text.
 Return a compact JSON with these exact keys:
 {{
-  "current_role": str,
+  "current_role_title": str,
   "past_experience": str,               # 2-4 lines summary
   "future_career_aspirations": str,
   "professional_interests": [str],      # 3-8 items, lowercase nouns

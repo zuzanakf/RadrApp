@@ -1,6 +1,6 @@
 CV_STRUCTURED_PROMPT = """You are an expert CV analyst. Read the provided CV text.
 Return a compact JSON with these exact keys:
-{
+{{
   "current_role": str,
   "past_experience": str,               # 2-4 lines summary
   "future_career_aspirations": str,
@@ -10,7 +10,7 @@ Return a compact JSON with these exact keys:
   "extracurriculars": [str],            # clubs/associations, 0-8
   "keywords_20": [str],                 # 20 single or two-word keywords
   "keywords_3": [str]                   # exactly 3 short tags
-}
+}}
 Use concise language. If unsure, return [] or "" for that field.
 CV TEXT:
 <<<

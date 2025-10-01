@@ -16,6 +16,7 @@ HANDLERS = {
 if __name__ == "__main__":
     print(f"[{WORKER_NAME}] starting poller ...")
     while True:
+        job = None
         try:
             with connect(autocommit=False) as conn:
                 with conn.transaction():
@@ -41,11 +42,14 @@ if __name__ == "__main__":
                 done_conn.commit()
 
         except Exception as e:
+            print(f"[{WORKER_NAME}] error: {e}")
+            traceback.print_exc()
             # best-effort failure update
             try:
                 with connect(autocommit=False) as fail_conn:
                     with fail_conn.transaction():
-                        mark_failed(fail_conn, job["id"], f"{type(e).__name__}: {e}")
+                        if job:
+                            mark_failed(fail_conn, job["id"], f"{type(e).__name__}: {e}")
                     fail_conn.commit()
             except Exception:
                 pass

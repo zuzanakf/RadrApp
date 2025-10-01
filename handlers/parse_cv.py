@@ -12,7 +12,7 @@ from utils.pdf import pdf_to_text
 
 
 class CVStructuredData(BaseModel):
-    current_role: str = ""
+    current_role_title: str = ""
     past_experience: str = ""
     future_career_aspirations: str = ""
     professional_interests: list[str] = Field(default_factory=list)
@@ -91,7 +91,7 @@ def handle(conn, job):
     )
 
     profile_fields = {
-        "current_role": cv_data.current_role,
+        "current_role_title": cv_data.current_role_title,
         "past_experience": cv_data.past_experience,
         "future_career_aspirations": cv_data.future_career_aspirations,
         "professional_interests": normalized.professional_interests,

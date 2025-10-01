@@ -21,11 +21,13 @@ if __name__ == "__main__":
             with connect(autocommit=False) as conn:
                 with conn.transaction():
                     job = claim_next_job(conn, MAX_ATTEMPTS)
-                    if not job:
-                        conn.commit()
-                        time.sleep(POLL_INTERVAL)
-                        continue
-                    mark_running(conn, job["id"])
+                    if job:
+                        mark_running(conn, job["id"])
+
+                if not job:
+                    time.sleep(POLL_INTERVAL)
+                    continue
+
                 conn.commit()
 
             # run outside txn

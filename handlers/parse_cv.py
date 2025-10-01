@@ -1,15 +1,41 @@
-import base64, json
-from typing import Dict, Any
-from db import execute, fetchone
+import base64
+import json
+from typing import Any, Dict
+
+from pydantic import BaseModel, Field
+
+from db import execute
 from jobs import enqueue_job
-from llm.client import chat_json
+from llm.client import parse_structured_response
 from llm.prompts import CV_STRUCTURED_PROMPT, TAGS_NORMALIZER_PROMPT
 from utils.pdf import pdf_to_text
+
+
+class CVStructuredData(BaseModel):
+    current_role: str = ""
+    past_experience: str = ""
+    future_career_aspirations: str = ""
+    professional_interests: list[str] = Field(default_factory=list)
+    professional_values: list[str] = Field(default_factory=list)
+    personal_interests: list[str] = Field(default_factory=list)
+    extracurriculars: list[str] = Field(default_factory=list)
+    keywords_20: list[str] = Field(default_factory=list)
+    keywords_3: list[str] = Field(default_factory=list)
+
+
+class NormalizedTags(BaseModel):
+    professional_interests: list[str] = Field(default_factory=list)
+    professional_values: list[str] = Field(default_factory=list)
+    personal_interests: list[str] = Field(default_factory=list)
+    extracurriculars: list[str] = Field(default_factory=list)
+    keywords_20: list[str] = Field(default_factory=list)
+    keywords_3: list[str] = Field(default_factory=list)
+
 
 def upsert_profile(conn, user_id: str, fields: Dict[str, Any]):
     cols = ["user_id"] + list(fields.keys())
     vals = [user_id] + list(fields.values())
-    placeholders = ", ".join(["%s"]*len(vals))
+    placeholders = ", ".join(["%s"] * len(vals))
     sets = ", ".join([f"{k}=excluded.{k}" for k in fields.keys()])
     sql = f"""
       insert into public.profiles ({", ".join(cols)})
@@ -17,6 +43,7 @@ def upsert_profile(conn, user_id: str, fields: Dict[str, Any]):
       on conflict (user_id) do update set {sets}, updated_at=now()
     """
     execute(conn, sql, vals)
+
 
 def handle(conn, job):
     payload = job["payload_json"]
@@ -28,41 +55,54 @@ def handle(conn, job):
     if not cv_text:
         raise ValueError("No CV text provided")
 
-    data = chat_json(
+    cv_data = parse_structured_response(
         model="gpt-4o-mini",
-        system="Return only valid JSON. No commentary.",
-        user=CV_STRUCTURED_PROMPT.format(cv_text=cv_text[:100_000])
+        messages=[
+            {"role": "system", "content": "Extract the CV information as structured data."},
+            {
+                "role": "user",
+                "content": CV_STRUCTURED_PROMPT.format(cv_text=cv_text[:100_000]),
+            },
+        ],
+        schema=CVStructuredData,
     )
 
-    norm = chat_json(
+    normalization_payload = json.dumps(
+        {
+            "professional_interests": cv_data.professional_interests,
+            "professional_values": cv_data.professional_values,
+            "personal_interests": cv_data.personal_interests,
+            "extracurriculars": cv_data.extracurriculars,
+            "keywords_20": cv_data.keywords_20,
+            "keywords_3": cv_data.keywords_3,
+        }
+    )
+
+    normalized = parse_structured_response(
         model="gpt-4o-mini",
-        system="Return only valid JSON. No commentary.",
-        user=TAGS_NORMALIZER_PROMPT.format(input_json=json.dumps({
-            "professional_interests": data.get("professional_interests", []),
-            "professional_values": data.get("professional_values", []),
-            "personal_interests": data.get("personal_interests", []),
-            "extracurriculars": data.get("extracurriculars", []),
-            "keywords_20": data.get("keywords_20", []),
-            "keywords_3": data.get("keywords_3", [])
-        }))
+        messages=[
+            {"role": "system", "content": "Canonicalize and return structured JSON."},
+            {
+                "role": "user",
+                "content": TAGS_NORMALIZER_PROMPT.format(input_json=normalization_payload),
+            },
+        ],
+        schema=NormalizedTags,
     )
 
     profile_fields = {
-        "current_role": data.get("current_role",""),
-        "past_experience": data.get("past_experience",""),
-        "future_career_aspirations": data.get("future_career_aspirations",""),
-        "professional_interests": norm.get("professional_interests", []),
-        "professional_values": norm.get("professional_values", []),
-        "personal_interests": norm.get("personal_interests", []),
-        "extracurriculars": norm.get("extracurriculars", []),
-        "tags": norm.get("keywords_3", []),
-        "keywords_20": norm.get("keywords_20", []),
-        "keywords_3": norm.get("keywords_3", []),
+        "current_role": cv_data.current_role,
+        "past_experience": cv_data.past_experience,
+        "future_career_aspirations": cv_data.future_career_aspirations,
+        "professional_interests": normalized.professional_interests,
+        "professional_values": normalized.professional_values,
+        "personal_interests": normalized.personal_interests,
+        "extracurriculars": normalized.extracurriculars,
+        "tags": normalized.keywords_3,
+        "keywords_20": normalized.keywords_20,
+        "keywords_3": normalized.keywords_3,
     }
     upsert_profile(conn, user_id, profile_fields)
 
-    # enqueue embeddings
-    # enqueue_job(conn, "compute_embeddings", {"user_id": user_id})
     if not payload.get("skip_embeddings", False):
         enqueue_job(conn, "compute_embeddings", {"user_id": user_id})
-

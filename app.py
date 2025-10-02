@@ -8,9 +8,10 @@ from jobs import claim_next_job, mark_running, mark_done, mark_failed
 from handlers import parse_cv
 
 HANDLERS = {
-  "parse_cv": parse_cv.handle
- # "compute_embeddings": compute_embeddings.handle,
- # "gen_three_things": three_things.handle,
+    "parse_cv": parse_cv.handle,
+    "parse_cv_from_storage": parse_cv.handle,
+    # "compute_embeddings": compute_embeddings.handle,
+    # "gen_three_things": three_things.handle,
 }
 
 if __name__ == "__main__":

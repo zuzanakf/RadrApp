@@ -30,6 +30,8 @@ def handle(conn, job: dict[str, Any]) -> None:
     if not profile:
         raise ValueError(f"Profile not found for user {user_id}")
 
+    embedding_dims = _resolve_embedding_dims(conn)
+
     career_text = _join_fields(
         profile.get("current_role_title"),
         profile.get("past_experience"),
@@ -44,27 +46,57 @@ def handle(conn, job: dict[str, Any]) -> None:
         profile.get("extracurriculars"),
     )
 
-    career_vec = _compute_embedding(career_text)
-    goals_vec = _compute_embedding(goals_text)
-    interests_vec = _compute_embedding(interests_text)
+    career_vec = _compute_embedding(career_text, embedding_dims)
+    goals_vec = _compute_embedding(goals_text, embedding_dims)
+    interests_vec = _compute_embedding(interests_text, embedding_dims)
 
     insert_sql, params = _build_upsert_sql(user_id, career_vec, goals_vec, interests_vec)
     execute(conn, insert_sql, params)
 
 
-def _compute_embedding(text: str) -> Optional[list[float]]:
+def _compute_embedding(text: str, dimensions: Optional[int]) -> Optional[list[float]]:
     text = (text or "").strip()
     if not text:
         return None
 
-    response = client.embeddings.create(model=EMBEDDING_MODEL, input=text)
+    request_kwargs: dict[str, Any] = {}
+    if dimensions:
+        request_kwargs["dimensions"] = dimensions
+
+    response = client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=text,
+        **request_kwargs,
+    )
     embedding = response.data[0].embedding
 
-    if EMBEDDING_DIMS and len(embedding) != EMBEDDING_DIMS:
+    if dimensions and len(embedding) != dimensions:
         raise ValueError(
-            f"Embedding dimension mismatch: expected {EMBEDDING_DIMS}, got {len(embedding)}"
+            f"Embedding dimension mismatch: expected {dimensions}, got {len(embedding)}"
         )
     return embedding
+
+
+def _resolve_embedding_dims(conn) -> Optional[int]:
+    if EMBEDDING_DIMS:
+        return EMBEDDING_DIMS
+
+    row = fetchone(
+        conn,
+        """
+        select atttypmod - 4 as dims
+          from pg_attribute
+         where attrelid = 'public.user_embeddings'::regclass
+           and attname = 'career_vec'
+           and atttypmod > 0
+         limit 1
+        """,
+    )
+
+    dims = row.get("dims") if row else None
+    if isinstance(dims, int) and dims > 0:
+        return dims
+    return None
 
 
 def _build_upsert_sql(

@@ -1,7 +1,8 @@
 """Job handler to compute embeddings for user profiles."""
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional
+import math
+from typing import Any, Iterable, Optional, Sequence
 
 from config import EMBEDDING_DIMS, EMBEDDING_MODEL
 from db import execute, fetchone
@@ -57,14 +58,39 @@ def _compute_embedding(text: str) -> Optional[list[float]]:
     if not text:
         return None
 
-    response = client.embeddings.create(model=EMBEDDING_MODEL, input=text)
-    embedding = response.data[0].embedding
+    response = client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=text,
+        encoding_format="float",
+    )
+    embedding = _convert_embedding_dimensions(response.data[0].embedding)
 
     if EMBEDDING_DIMS and len(embedding) != EMBEDDING_DIMS:
         raise ValueError(
             f"Embedding dimension mismatch: expected {EMBEDDING_DIMS}, got {len(embedding)}"
         )
     return embedding
+
+
+def _convert_embedding_dimensions(embedding: Sequence[float]) -> list[float]:
+    if EMBEDDING_DIMS is None:
+        return list(float(value) for value in embedding)
+
+    if len(embedding) < EMBEDDING_DIMS:
+        raise ValueError(
+            f"Embedding dimension mismatch: cannot convert {len(embedding)}-d vector "
+            f"to {EMBEDDING_DIMS} dimensions"
+        )
+
+    trimmed = [float(value) for value in embedding[:EMBEDDING_DIMS]]
+    return _normalize_l2(trimmed)
+
+
+def _normalize_l2(values: Sequence[float]) -> list[float]:
+    norm = math.sqrt(sum(value * value for value in values))
+    if norm == 0:
+        return list(values)
+    return [value / norm for value in values]
 
 
 def _build_upsert_sql(

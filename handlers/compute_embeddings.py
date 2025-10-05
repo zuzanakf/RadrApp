@@ -1,7 +1,8 @@
 """Job handler to compute embeddings for user profiles."""
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional
+import math
+from typing import Any, Iterable, Optional, Sequence
 
 from config import EMBEDDING_DIMS, EMBEDDING_MODEL
 from db import execute, fetchone
@@ -59,16 +60,12 @@ def _compute_embedding(text: str, dimensions: Optional[int]) -> Optional[list[fl
     if not text:
         return None
 
-    request_kwargs: dict[str, Any] = {}
-    if dimensions:
-        request_kwargs["dimensions"] = dimensions
-
     response = client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=text,
-        **request_kwargs,
+        encoding_format="float",
     )
-    embedding = response.data[0].embedding
+    embedding = _convert_embedding_dimensions(response.data[0].embedding)
 
     if dimensions and len(embedding) != dimensions:
         raise ValueError(
@@ -77,26 +74,25 @@ def _compute_embedding(text: str, dimensions: Optional[int]) -> Optional[list[fl
     return embedding
 
 
-def _resolve_embedding_dims(conn) -> Optional[int]:
-    if EMBEDDING_DIMS:
-        return EMBEDDING_DIMS
+def _convert_embedding_dimensions(embedding: Sequence[float]) -> list[float]:
+    if EMBEDDING_DIMS is None:
+        return list(float(value) for value in embedding)
 
-    row = fetchone(
-        conn,
-        """
-        select atttypmod - 4 as dims
-          from pg_attribute
-         where attrelid = 'public.user_embeddings'::regclass
-           and attname = 'career_vec'
-           and atttypmod > 0
-         limit 1
-        """,
-    )
+    if len(embedding) < EMBEDDING_DIMS:
+        raise ValueError(
+            f"Embedding dimension mismatch: cannot convert {len(embedding)}-d vector "
+            f"to {EMBEDDING_DIMS} dimensions"
+        )
 
-    dims = row.get("dims") if row else None
-    if isinstance(dims, int) and dims > 0:
-        return dims
-    return None
+    trimmed = [float(value) for value in embedding[:EMBEDDING_DIMS]]
+    return _normalize_l2(trimmed)
+
+
+def _normalize_l2(values: Sequence[float]) -> list[float]:
+    norm = math.sqrt(sum(value * value for value in values))
+    if norm == 0:
+        return list(values)
+    return [value / norm for value in values]
 
 
 def _build_upsert_sql(

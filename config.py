@@ -10,7 +10,7 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # optional (
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "openai")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "1536"))
+EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "768"))
 
 POLL_INTERVAL = float(os.getenv("POLL_INTERVAL_SECONDS", "2"))
 MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS", "3"))

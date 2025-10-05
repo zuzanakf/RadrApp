@@ -31,8 +31,6 @@ def handle(conn, job: dict[str, Any]) -> None:
     if not profile:
         raise ValueError(f"Profile not found for user {user_id}")
 
-    embedding_dims = _resolve_embedding_dims(conn)
-
     career_text = _join_fields(
         profile.get("current_role_title"),
         profile.get("past_experience"),
@@ -47,15 +45,15 @@ def handle(conn, job: dict[str, Any]) -> None:
         profile.get("extracurriculars"),
     )
 
-    career_vec = _compute_embedding(career_text, embedding_dims)
-    goals_vec = _compute_embedding(goals_text, embedding_dims)
-    interests_vec = _compute_embedding(interests_text, embedding_dims)
+    career_vec = _compute_embedding(career_text)
+    goals_vec = _compute_embedding(goals_text)
+    interests_vec = _compute_embedding(interests_text)
 
     insert_sql, params = _build_upsert_sql(user_id, career_vec, goals_vec, interests_vec)
     execute(conn, insert_sql, params)
 
 
-def _compute_embedding(text: str, dimensions: Optional[int]) -> Optional[list[float]]:
+def _compute_embedding(text: str) -> Optional[list[float]]:
     text = (text or "").strip()
     if not text:
         return None
@@ -67,10 +65,6 @@ def _compute_embedding(text: str, dimensions: Optional[int]) -> Optional[list[fl
     )
     embedding = _convert_embedding_dimensions(response.data[0].embedding)
 
-    if dimensions and len(embedding) != dimensions:
-        raise ValueError(
-            f"Embedding dimension mismatch: expected {dimensions}, got {len(embedding)}"
-        )
     return embedding
 
 
@@ -153,22 +147,3 @@ def _stringify(value: Any) -> str:
             f"{key}: {val}" for key, val in value.items() if val not in (None, "")
         )
     return str(value).strip()
-
-
-def _resolve_embedding_dims(conn) -> Optional[int]:
-    if EMBEDDING_DIMS is not None:
-        return EMBEDDING_DIMS
-
-    row = fetchone(
-        conn,
-        """
-        select atttypmod - 4 as embedding_dims
-          from pg_attribute
-         where attrelid = 'public.user_embeddings'::regclass
-           and attname = 'career_vec'
-        """,
-    )
-    dims = row.get("embedding_dims") if row else None
-    if dims and dims > 0:
-        return int(dims)
-    return None

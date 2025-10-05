@@ -12,10 +12,7 @@ EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "openai")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 
 _embedding_dims_env = os.getenv("EMBEDDING_DIMS")
-if _embedding_dims_env and _embedding_dims_env.lower() not in {"auto", "infer"}:
-    EMBEDDING_DIMS = int(_embedding_dims_env)
-else:
-    EMBEDDING_DIMS = None
+EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "768"))
 
 POLL_INTERVAL = float(os.getenv("POLL_INTERVAL_SECONDS", "2"))
 MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS", "3"))

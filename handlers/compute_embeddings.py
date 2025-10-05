@@ -153,3 +153,22 @@ def _stringify(value: Any) -> str:
             f"{key}: {val}" for key, val in value.items() if val not in (None, "")
         )
     return str(value).strip()
+
+
+def _resolve_embedding_dims(conn) -> Optional[int]:
+    if EMBEDDING_DIMS is not None:
+        return EMBEDDING_DIMS
+
+    row = fetchone(
+        conn,
+        """
+        select atttypmod - 4 as embedding_dims
+          from pg_attribute
+         where attrelid = 'public.user_embeddings'::regclass
+           and attname = 'career_vec'
+        """,
+    )
+    dims = row.get("embedding_dims") if row else None
+    if dims and dims > 0:
+        return int(dims)
+    return None

@@ -17,7 +17,11 @@ PROFILE_QUERY = """
         professional_interests,
         professional_values,
         personal_interests,
-        extracurriculars
+        extracurriculars,
+        bio,
+        tags,
+        keywords_20,
+        keywords_3
       from public.profiles
      where user_id = %s
 """
@@ -31,25 +35,40 @@ def handle(conn, job: dict[str, Any]) -> None:
     if not profile:
         raise ValueError(f"Profile not found for user {user_id}")
 
-    career_text = _join_fields(
+    prof_text = _join_fields(
         profile.get("current_role_title"),
         profile.get("past_experience"),
-    )
-    goals_text = _join_fields(
-        profile.get("future_career_aspirations"),
+        profile.get("professional_interests"),
         profile.get("professional_values"),
     )
-    interests_text = _join_fields(
-        profile.get("professional_interests"),
+    personal_text = _join_fields(
         profile.get("personal_interests"),
         profile.get("extracurriculars"),
     )
+    profile_text = _join_fields(
+        profile.get("current_role_title"),
+        profile.get("past_experience"),
+        profile.get("future_career_aspirations"),
+        profile.get("professional_values"),
+        profile.get("professional_interests"),
+        profile.get("personal_interests"),
+        profile.get("extracurriculars"),
+        profile.get("bio"),
+        profile.get("tags"),
+        profile.get("keywords_20"),
+        profile.get("keywords_3"),
+    )
 
-    career_vec = _compute_embedding(career_text)
-    goals_vec = _compute_embedding(goals_text)
-    interests_vec = _compute_embedding(interests_text)
+    prof_vec = _compute_embedding(prof_text)
+    personal_vec = _compute_embedding(personal_text)
+    profile_vec = _compute_embedding(profile_text)
 
-    insert_sql, params = _build_upsert_sql(user_id, career_vec, goals_vec, interests_vec)
+    insert_sql, params = _build_upsert_sql(
+        user_id,
+        prof_vec,
+        personal_vec,
+        profile_vec,
+    )
     execute(conn, insert_sql, params)
 
 
@@ -91,23 +110,31 @@ def _normalize_l2(values: Sequence[float]) -> list[float]:
 
 def _build_upsert_sql(
     user_id: str,
-    career_vec: Optional[list[float]],
-    goals_vec: Optional[list[float]],
-    interests_vec: Optional[list[float]],
+    prof_vec: Optional[list[float]],
+    personal_vec: Optional[list[float]],
+    profile_vec: Optional[list[float]],
 ) -> tuple[str, list[Any]]:
-    career_expr, career_params = _vector_expression(career_vec)
-    goals_expr, goals_params = _vector_expression(goals_vec)
-    interests_expr, interests_params = _vector_expression(interests_vec)
+    prof_expr, prof_params = _vector_expression(prof_vec)
+    personal_expr, personal_params = _vector_expression(personal_vec)
+    profile_expr, profile_params = _vector_expression(profile_vec)
 
     sql = f"""
-        insert into public.user_embeddings (user_id, career_vec, goals_vec, interests_vec)
-        values (%s, {career_expr}, {goals_expr}, {interests_expr})
+        insert into public.user_embeddings (
+            user_id,
+            prof_vec,
+            personal_vec,
+            profile_vec
+        )
+        values (%s, {prof_expr}, {personal_expr}, {profile_expr})
         on conflict (user_id) do update set
-            career_vec = excluded.career_vec,
-            goals_vec = excluded.goals_vec,
-            interests_vec = excluded.interests_vec
+            prof_vec = excluded.prof_vec,
+            personal_vec = excluded.personal_vec,
+            profile_vec = excluded.profile_vec
     """
-    params = [user_id] + career_params + goals_params + interests_params
+    params = [user_id]
+    params.extend(prof_params)
+    params.extend(personal_params)
+    params.extend(profile_params)
     return sql, params
 
 

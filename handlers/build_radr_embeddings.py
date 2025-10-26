@@ -21,20 +21,25 @@ RADR_QUERY = """
 
 USER_EMBEDDINGS_QUERY = """
     select
-        career_vec,
-        goals_vec,
-        interests_vec
+        prof_vec,
+        personal_vec,
+        profile_vec
       from public.user_embeddings
      where user_id = %s
 """
 
 UPSERT_SQL_TEMPLATE = """
-    insert into public.radr_embeddings (radr_id, career_vec, goals_vec, interests_vec)
-    values (%s, {career_expr}, {goals_expr}, {interests_expr})
+    insert into public.radr_embeddings (
+        radr_id,
+        prof_vec,
+        personal_vec,
+        profile_vec
+    )
+    values (%s, {prof_expr}, {personal_expr}, {profile_expr})
     on conflict (radr_id) do update
-    set career_vec = excluded.career_vec,
-        goals_vec = excluded.goals_vec,
-        interests_vec = excluded.interests_vec,
+    set prof_vec = excluded.prof_vec,
+        personal_vec = excluded.personal_vec,
+        profile_vec = excluded.profile_vec,
         updated_at = now()
 """
 
@@ -60,18 +65,23 @@ def handle(conn, job: dict[str, Any]) -> None:
 
     user_embeddings = fetchone(conn, USER_EMBEDDINGS_QUERY, [creator_user_id]) or {}
 
-    user_career_vec = _coerce_vector(user_embeddings.get("career_vec"))
-    user_goals_vec = _coerce_vector(user_embeddings.get("goals_vec"))
-    user_interests_vec = _coerce_vector(user_embeddings.get("interests_vec"))
+    user_prof_vec = _coerce_vector(user_embeddings.get("prof_vec"))
+    user_personal_vec = _coerce_vector(user_embeddings.get("personal_vec"))
+    user_profile_vec = _coerce_vector(user_embeddings.get("profile_vec"))
 
     intent_text = _join_fields(radr.get("intentions"), radr.get("bio"))
     intent_vec = embed_text(intent_text)
 
-    career_vec = _blend_vectors(user_career_vec, intent_vec)
-    goals_vec = _blend_vectors(user_goals_vec, intent_vec)
-    interests_vec = _blend_vectors(user_interests_vec, intent_vec)
+    prof_vec = _blend_vectors(user_prof_vec, intent_vec)
+    personal_vec = _blend_vectors(user_personal_vec, intent_vec)
+    profile_vec = _blend_vectors(user_profile_vec, intent_vec)
 
-    insert_sql, params = _build_upsert_sql(radr_id, career_vec, goals_vec, interests_vec)
+    insert_sql, params = _build_upsert_sql(
+        radr_id,
+        prof_vec,
+        personal_vec,
+        profile_vec,
+    )
     execute(conn, insert_sql, params)
 
 
@@ -150,24 +160,24 @@ def _coerce_vector(vec: Any) -> Optional[list[float]]:
 
 def _build_upsert_sql(
     radr_id: str,
-    career_vec: Optional[list[float]],
-    goals_vec: Optional[list[float]],
-    interests_vec: Optional[list[float]],
+    prof_vec: Optional[list[float]],
+    personal_vec: Optional[list[float]],
+    profile_vec: Optional[list[float]],
 ) -> tuple[str, list[Any]]:
-    career_expr, career_params = _vector_expression(career_vec)
-    goals_expr, goals_params = _vector_expression(goals_vec)
-    interests_expr, interests_params = _vector_expression(interests_vec)
+    prof_expr, prof_params = _vector_expression(prof_vec)
+    personal_expr, personal_params = _vector_expression(personal_vec)
+    profile_expr, profile_params = _vector_expression(profile_vec)
 
     sql = UPSERT_SQL_TEMPLATE.format(
-        career_expr=career_expr,
-        goals_expr=goals_expr,
-        interests_expr=interests_expr,
+        prof_expr=prof_expr,
+        personal_expr=personal_expr,
+        profile_expr=profile_expr,
     )
 
     params: list[Any] = [radr_id]
-    params.extend(career_params)
-    params.extend(goals_params)
-    params.extend(interests_params)
+    params.extend(prof_params)
+    params.extend(personal_params)
+    params.extend(profile_params)
     return sql, params
 
 

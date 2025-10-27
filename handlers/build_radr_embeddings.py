@@ -1,6 +1,8 @@
 """Job handler to build embeddings for radrs."""
 from __future__ import annotations
 
+import json
+import re
 from typing import Any, Iterable, Optional, Sequence
 
 from config import EMBEDDING_DIMS, EMBEDDING_MODEL
@@ -152,6 +154,29 @@ def _blend_vectors(
 def _coerce_vector(vec: Any) -> Optional[list[float]]:
     if vec is None:
         return None
+
+    if isinstance(vec, str):
+        vec = vec.strip()
+        if not vec:
+            return None
+
+        # Try JSON decoding first.
+        try:
+            parsed = json.loads(vec)
+        except json.JSONDecodeError:
+            # Accept strings formatted like "{1,2,3}" or "1,2,3" by converting
+            # them into a JSON-compatible representation.
+            cleaned = vec
+            if cleaned.startswith("{") and cleaned.endswith("}"):
+                cleaned = "[" + cleaned[1:-1] + "]"
+            elif not cleaned.startswith("[") and not cleaned.endswith("]"):
+                cleaned = "[" + cleaned + "]"
+            cleaned = re.sub(r"\s+", "", cleaned)
+            parsed = json.loads(cleaned)
+
+        if not isinstance(parsed, (list, tuple)):
+            raise TypeError(f"Unsupported vector string representation: {vec!r}")
+        vec = parsed
 
     if isinstance(vec, (list, tuple)):
         return [float(value) for value in vec]

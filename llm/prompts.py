@@ -11,7 +11,7 @@ Return a compact JSON with these exact keys:
   "keywords_20": [str],                 # 20 single or two-word keywords
   "keywords_3": [str]                   # exactly 3 short tags
 }}
-Use concise language. If unsure, return [] or "" for that field.
+Write in third person. Use detailed language. If unsure, return [] or "" for that field, do not make up information.
 CV TEXT:
 <<<
 {cv_text}

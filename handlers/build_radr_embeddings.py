@@ -5,6 +5,7 @@ from typing import Any, Iterable, Optional, Sequence
 
 from config import EMBEDDING_DIMS, EMBEDDING_MODEL
 from db import execute, fetchone
+from jobs import enqueue_job
 from llm.client import client
 
 
@@ -83,6 +84,12 @@ def handle(conn, job: dict[str, Any]) -> None:
         profile_vec,
     )
     execute(conn, insert_sql, params)
+
+    enqueue_job(
+        conn,
+        "score_radr_for_checked_in_users",
+        {"radr_id": radr_id},
+    )
 
 
 def embed_text(text: str) -> Optional[list[float]]:

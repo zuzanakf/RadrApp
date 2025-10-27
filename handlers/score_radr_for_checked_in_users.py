@@ -1,6 +1,7 @@
 """Score an open radr for users currently checked in at its place."""
 from __future__ import annotations
 
+import json
 from typing import Any, Optional, Sequence
 
 from db import execute, fetchall, fetchone
@@ -160,6 +161,13 @@ def _coerce_vector(vec: Any) -> Optional[list[float]]:
 
     if isinstance(vec, bytes):
         raise TypeError("Binary vector representations are not supported")
+
+    if isinstance(vec, str):
+        try:
+            loaded = json.loads(vec)
+        except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+            raise ValueError(f"Unable to decode vector string: {vec!r}") from exc
+        return _coerce_vector(loaded)
 
     if hasattr(vec, "__iter__"):
         return [float(value) for value in vec]

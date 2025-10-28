@@ -5,14 +5,21 @@ from jobs import claim_next_job, mark_running, mark_done, mark_failed
 
 # Import handlers
 #from handlers import parse_cv, compute_embeddings, three_things
-from handlers import build_radr_embeddings, compute_embeddings, parse_cv, score_radr_for_checked_in_users
+from handlers import (
+    build_radr_embeddings,
+    compute_embeddings,
+    parse_cv,
+    score_radr_for_checked_in_users,
+    score_user_for_open_radrs,
+)
 
 HANDLERS = {
     "parse_cv": parse_cv.handle,
     "parse_cv_from_storage": parse_cv.handle,
     "compute_embeddings": compute_embeddings.handle,
     "build_radr_embeddings": build_radr_embeddings.handle,
-    "score_radr_for_checked_in_users": score_radr_for_checked_in_users.handle
+    "score_radr_for_checked_in_users": score_radr_for_checked_in_users.handle,
+    "score_user_for_open_radrs": score_user_for_open_radrs.handle,
     # "gen_three_things": three_things.handle,
 }
 

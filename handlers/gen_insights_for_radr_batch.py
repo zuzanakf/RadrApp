@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from db import execute, fetchall, fetchone
 from jobs import enqueue_job
 from llm.client import parse_structured_response
+from llm.prompts import GEN_INSIGHTS_SYSTEM_PROMPT, build_gen_insights_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -102,15 +103,33 @@ class InsightBatch(BaseModel):
     items: list[InsightItem] = Field(default_factory=list)
 
 
+DEFAULT_BATCH_SIZE = 3
+MAX_CANDIDATES_PER_REQUEST = 3
+
+
 def handle(conn, job: dict[str, Any]) -> None:
     payload = job.get("payload_json") or {}
     radr_id = payload.get("radr_id")
     if not radr_id:
         return
 
-    batch_size = int(payload.get("batch_size") or 5)
+    raw_batch_size = payload.get("batch_size")
+    try:
+        batch_size = int(raw_batch_size or DEFAULT_BATCH_SIZE)
+    except (TypeError, ValueError):
+        batch_size = DEFAULT_BATCH_SIZE
+
     if batch_size <= 0:
-        batch_size = 5
+        batch_size = DEFAULT_BATCH_SIZE
+
+    if batch_size > MAX_CANDIDATES_PER_REQUEST:
+        logger.debug(
+            "Capping batch size from %s to %s for radr %s",
+            batch_size,
+            MAX_CANDIDATES_PER_REQUEST,
+            radr_id,
+        )
+        batch_size = MAX_CANDIDATES_PER_REQUEST
 
     fetchone(conn, ADVISORY_LOCK_SQL, [radr_id])
 
@@ -192,19 +211,13 @@ def handle(conn, job: dict[str, Any]) -> None:
     if not llm_input_candidates:
         return
 
-    llm_prompt = _build_prompt(formatted_opener, llm_input_candidates)
+    llm_prompt = build_gen_insights_prompt(formatted_opener, llm_input_candidates)
 
     try:
         response = parse_structured_response(
             model="gpt-4o-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You generate insights connecting an opener and potential joiners. "
-                        "Always return valid JSON matching the requested schema."
-                    ),
-                },
+                {"role": "system", "content": GEN_INSIGHTS_SYSTEM_PROMPT},
                 {"role": "user", "content": llm_prompt},
             ],
             schema=InsightBatch,
@@ -360,31 +373,6 @@ def _format_profile(profile: dict[str, Any]) -> str:
     add("Keywords", "keywords_3")
 
     return "\n".join(parts)
-
-
-def _build_prompt(opener_profile: str, candidates: list[dict[str, str]]) -> str:
-    lines = [
-        "Generate conversation insights for the opener and candidates.",
-        "Return a JSON array where each item has keys: user_id, three_things (list of 3 strings, each <=16 words),",
-        "explanation (object with keys 'why' and bio_blurbs with creator/joiner strings), and common_tags (5 items).",
-        "Only include candidates with sufficient overlapping themes. Avoid fabricating details.",
-        "Use the candidate IDs exactly as provided (for example, C1) in the user_id field of the JSON output.",
-        "Opener:",
-        opener_profile or "(no data)",
-        "",
-        "Candidates:",
-    ]
-
-    for candidate in candidates:
-        lines.append(f"- Candidate {candidate['alias']}:")
-        lines.append(candidate.get("profile") or "(no data)")
-        lines.append("")
-
-    lines.append(
-        "Produce the JSON array in the same order as presented candidates, omitting anyone you cannot confidently match."
-    )
-
-    return "\n".join(lines)
 
 
 def _serialize_insight_item(item: InsightItem) -> dict[str, Any]:

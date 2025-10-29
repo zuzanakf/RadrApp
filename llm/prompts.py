@@ -36,3 +36,36 @@ PROFILE A:
 PROFILE B:
 {profile_b}
 """
+
+
+GEN_INSIGHTS_SYSTEM_PROMPT = (
+    "You generate insights connecting an opener and potential joiners. "
+    "Always return valid JSON matching the requested schema."
+)
+
+
+def build_gen_insights_prompt(
+    opener_profile: str, candidates: list[dict[str, str]]
+) -> str:
+    lines = [
+        "Generate conversation insights for the opener and candidates.",
+        "Return a JSON array where each item has keys: user_id, three_things (list of 3 strings, each <=16 words),",
+        "explanation (object with keys 'why' and bio_blurbs with creator/joiner strings), and common_tags (5 items).",
+        "Only include candidates with sufficient overlapping themes. Avoid fabricating details.",
+        "Use the candidate IDs exactly as provided (for example, C1) in the user_id field of the JSON output.",
+        "Opener:",
+        opener_profile or "(no data)",
+        "",
+        "Candidates:",
+    ]
+
+    for candidate in candidates:
+        lines.append(f"- Candidate {candidate['alias']}:")
+        lines.append(candidate.get("profile") or "(no data)")
+        lines.append("")
+
+    lines.append(
+        "Produce the JSON array in the same order as presented candidates, omitting anyone you cannot confidently match."
+    )
+
+    return "\n".join(lines)

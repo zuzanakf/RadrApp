@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Any, Iterable
 
-from pydantic import BaseModel, Field, RootModel
+from pydantic import BaseModel, Field
 
 from db import execute, fetchall, fetchone
 from jobs import enqueue_job
@@ -90,8 +90,8 @@ class InsightItem(BaseModel):
     common_tags: list[str] = Field(default_factory=list)
 
 
-class InsightBatch(RootModel[list[InsightItem]]):
-    root: list[InsightItem] = Field(default_factory=list)
+class InsightBatch(BaseModel):
+    items: list[InsightItem] = Field(default_factory=list)
 
 
 def handle(conn, job: dict[str, Any]) -> None:
@@ -184,7 +184,11 @@ def handle(conn, job: dict[str, Any]) -> None:
         logger.exception("Failed to parse structured response for radr %s", radr_id)
         return
 
-    items = list(getattr(response, "root", getattr(response, "__root__", [])) or [])
+    batch_items = getattr(response, "items", None)
+    if batch_items is None:
+        batch_items = getattr(response, "root", getattr(response, "__root__", []))
+
+    items = list(batch_items or [])
 
     for item in items:
         if item.user_id not in candidate_ids:

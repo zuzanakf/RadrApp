@@ -119,7 +119,11 @@ def handle(conn, job: dict[str, Any]) -> None:
         return
 
     pending = fetchall(conn, PENDING_USERS_QUERY, [radr_id, batch_size])
-    pending_user_ids = [row.get("user_id") for row in pending or [] if row.get("user_id")]
+    pending_user_ids = [
+        str(row.get("user_id"))
+        for row in pending or []
+        if row.get("user_id") not in (None, "")
+    ]
     logger.debug(
         "Pending rows for radr %s (count=%s, sample_user_ids=%s)",
         radr_id,
@@ -129,7 +133,11 @@ def handle(conn, job: dict[str, Any]) -> None:
     if not pending:
         return
 
-    candidate_ids = [row.get("user_id") for row in pending if row.get("user_id")]
+    candidate_ids = [
+        str(row.get("user_id"))
+        for row in pending
+        if row.get("user_id") not in (None, "")
+    ]
     logger.debug(
         "Candidate ids for radr %s (count=%s, sample=%s)",
         radr_id,
@@ -161,20 +169,24 @@ def handle(conn, job: dict[str, Any]) -> None:
         _summarize_list(formatted_candidates.keys()),
     )
 
-    llm_input_candidates = [
-        {
-            "user_id": user_id,
-            "profile": formatted_candidates[user_id],
-        }
-        for user_id in candidate_ids
-        if user_id in formatted_candidates
-    ]
+    alias_to_user_id: dict[str, str] = {}
+    llm_input_candidates = []
+    for index, user_id in enumerate(candidate_ids, start=1):
+        profile = formatted_candidates.get(user_id)
+        if not profile:
+            continue
+        alias = f"C{index}"
+        alias_to_user_id[alias] = user_id
+        llm_input_candidates.append({
+            "alias": alias,
+            "profile": profile,
+        })
 
     logger.debug(
         "LLM input candidates for radr %s (count=%s, sample_user_ids=%s)",
         radr_id,
         len(llm_input_candidates),
-        _summarize_list([item.get("user_id") for item in llm_input_candidates]),
+        _summarize_list([item.get("alias") for item in llm_input_candidates]),
     )
 
     if not llm_input_candidates:
@@ -207,8 +219,37 @@ def handle(conn, job: dict[str, Any]) -> None:
 
     items = list(batch_items or [])
 
+    valid_response_ids = set(alias_to_user_id.keys()) | set(candidate_ids)
+
     for item in items:
-        if item.user_id not in candidate_ids:
+        raw_user_id = getattr(item, "user_id", "")
+        response_user_id = str(raw_user_id).strip()
+        if not response_user_id:
+            logger.warning(
+                "Skipping item with missing user_id for radr %s. Raw item: %s",
+                radr_id,
+                _serialize_insight_item(item),
+            )
+            continue
+
+        if response_user_id not in valid_response_ids:
+            logger.warning(
+                "Skipping user %s for radr %s because it was not requested. Raw item: %s",
+                response_user_id,
+                radr_id,
+                _serialize_insight_item(item),
+            )
+            continue
+
+        user_id = alias_to_user_id.get(response_user_id, response_user_id)
+
+        if user_id not in candidate_ids:
+            logger.warning(
+                "Skipping user %s for radr %s due to unresolved mapping. Raw item: %s",
+                response_user_id,
+                radr_id,
+                _serialize_insight_item(item),
+            )
             continue
 
         three_things = [
@@ -219,7 +260,7 @@ def handle(conn, job: dict[str, Any]) -> None:
         if len(three_things) < 1:
             logger.warning(
                 "Skipping user %s for radr %s due to empty three_things. Raw item: %s",
-                item.user_id,
+                user_id,
                 radr_id,
                 _serialize_insight_item(item),
             )
@@ -242,7 +283,7 @@ def handle(conn, job: dict[str, Any]) -> None:
         if not explanation["why"]:
             logger.warning(
                 "Skipping user %s for radr %s due to empty why. Raw item: %s",
-                item.user_id,
+                user_id,
                 radr_id,
                 _serialize_insight_item(item),
             )
@@ -257,12 +298,12 @@ def handle(conn, job: dict[str, Any]) -> None:
                     json.dumps(explanation, ensure_ascii=False),
                     common_tags,
                     radr_id,
-                    item.user_id,
+                    user_id,
                 ],
             )
         except Exception:
             logger.exception(
-                "Failed to update insights for radr %s user %s", radr_id, item.user_id
+                "Failed to update insights for radr %s user %s", radr_id, user_id
             )
             raise
 
@@ -281,9 +322,9 @@ def _fetch_candidate_profiles(conn, user_ids: Iterable[str]) -> dict[str, dict[s
     result: dict[str, dict[str, Any]] = {}
     for row in rows or []:
         user_id = row.get("user_id")
-        if not user_id:
+        if user_id in (None, ""):
             continue
-        result[user_id] = row
+        result[str(user_id)] = row
     return result
 
 
@@ -327,6 +368,7 @@ def _build_prompt(opener_profile: str, candidates: list[dict[str, str]]) -> str:
         "Return a JSON array where each item has keys: user_id, three_things (list of 3 strings, each <=16 words),",
         "explanation (object with keys 'why' and bio_blurbs with creator/joiner strings), and common_tags (5 items).",
         "Only include candidates with sufficient overlapping themes. Avoid fabricating details.",
+        "Use the candidate IDs exactly as provided (for example, C1) in the user_id field of the JSON output.",
         "Opener:",
         opener_profile or "(no data)",
         "",
@@ -334,8 +376,8 @@ def _build_prompt(opener_profile: str, candidates: list[dict[str, str]]) -> str:
     ]
 
     for candidate in candidates:
-        lines.append(f"- Candidate {candidate['user_id']}:")
-        lines.append(candidate["profile"] or "(no data)")
+        lines.append(f"- Candidate {candidate['alias']}:")
+        lines.append(candidate.get("profile") or "(no data)")
         lines.append("")
 
     lines.append(

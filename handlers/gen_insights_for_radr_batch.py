@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any, Iterable
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, RootModel
 
 from db import execute, fetchall, fetchone
 from jobs import enqueue_job
@@ -87,8 +87,8 @@ class InsightItem(BaseModel):
     common_tags: list[str] = Field(default_factory=list)
 
 
-class InsightBatch(BaseModel):
-    __root__: list[InsightItem] = Field(default_factory=list)
+class InsightBatch(RootModel[list[InsightItem]]):
+    root: list[InsightItem] = Field(default_factory=list)
 
 
 def handle(conn, job: dict[str, Any]) -> None:
@@ -157,7 +157,7 @@ def handle(conn, job: dict[str, Any]) -> None:
     except Exception:
         return
 
-    items = list(getattr(response, "__root__", []) or [])
+    items = list(getattr(response, "root", getattr(response, "__root__", [])) or [])
 
     for item in items:
         if item.user_id not in candidate_ids:

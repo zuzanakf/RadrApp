@@ -1,3 +1,11 @@
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
+
 import time, traceback
 from config import POLL_INTERVAL, MAX_ATTEMPTS, WORKER_NAME
 from db import connect

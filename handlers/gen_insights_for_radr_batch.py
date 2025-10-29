@@ -73,6 +73,14 @@ REMAINING_COUNT_SQL = """
 """
 
 
+def _summarize_list(values: Iterable[Any], limit: int = 3) -> list[Any]:
+    items = [value for value in values if value not in (None, "")]
+    if len(items) <= limit:
+        return items
+    remaining = len(items) - limit
+    return [*items[:limit], f"...(+{remaining})"]
+
+
 class InsightBioBlurbs(BaseModel):
     creator: str = ""
     joiner: str = ""
@@ -111,23 +119,32 @@ def handle(conn, job: dict[str, Any]) -> None:
         return
 
     pending = fetchall(conn, PENDING_USERS_QUERY, [radr_id, batch_size])
-    logger.debug("Pending rows for radr %s (count=%s): %s", radr_id, len(pending or []), pending)
+    pending_user_ids = [row.get("user_id") for row in pending or [] if row.get("user_id")]
+    logger.debug(
+        "Pending rows for radr %s (count=%s, sample_user_ids=%s)",
+        radr_id,
+        len(pending or []),
+        _summarize_list(pending_user_ids),
+    )
     if not pending:
         return
 
     candidate_ids = [row.get("user_id") for row in pending if row.get("user_id")]
     logger.debug(
-        "Candidate ids for radr %s (count=%s): %s", radr_id, len(candidate_ids), candidate_ids
+        "Candidate ids for radr %s (count=%s, sample=%s)",
+        radr_id,
+        len(candidate_ids),
+        _summarize_list(candidate_ids),
     )
     if not candidate_ids:
         return
 
     candidate_profiles = _fetch_candidate_profiles(conn, candidate_ids)
     logger.debug(
-        "Fetched candidate profiles for radr %s (count=%s): %s",
+        "Fetched candidate profiles for radr %s (count=%s, sample_user_ids=%s)",
         radr_id,
         len(candidate_profiles or {}),
-        candidate_profiles,
+        _summarize_list((candidate_profiles or {}).keys()),
     )
     if not candidate_profiles:
         return
@@ -138,10 +155,10 @@ def handle(conn, job: dict[str, Any]) -> None:
         for user_id, profile in candidate_profiles.items()
     }
     logger.debug(
-        "Formatted candidates for radr %s (count=%s): %s",
+        "Formatted candidates for radr %s (count=%s, sample_user_ids=%s)",
         radr_id,
         len(formatted_candidates),
-        formatted_candidates,
+        _summarize_list(formatted_candidates.keys()),
     )
 
     llm_input_candidates = [
@@ -154,10 +171,10 @@ def handle(conn, job: dict[str, Any]) -> None:
     ]
 
     logger.debug(
-        "LLM input candidates for radr %s (count=%s): %s",
+        "LLM input candidates for radr %s (count=%s, sample_user_ids=%s)",
         radr_id,
         len(llm_input_candidates),
-        llm_input_candidates,
+        _summarize_list([item.get("user_id") for item in llm_input_candidates]),
     )
 
     if not llm_input_candidates:

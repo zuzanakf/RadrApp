@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Iterable
 
 from pydantic import BaseModel, Field, RootModel
@@ -9,6 +10,8 @@ from pydantic import BaseModel, Field, RootModel
 from db import execute, fetchall, fetchone
 from jobs import enqueue_job
 from llm.client import parse_structured_response
+
+logger = logging.getLogger(__name__)
 
 ADVISORY_LOCK_SQL = "select pg_advisory_xact_lock(hashtextextended(%s, 0))"
 
@@ -108,14 +111,24 @@ def handle(conn, job: dict[str, Any]) -> None:
         return
 
     pending = fetchall(conn, PENDING_USERS_QUERY, [radr_id, batch_size])
+    logger.debug("Pending rows for radr %s (count=%s): %s", radr_id, len(pending or []), pending)
     if not pending:
         return
 
     candidate_ids = [row.get("user_id") for row in pending if row.get("user_id")]
+    logger.debug(
+        "Candidate ids for radr %s (count=%s): %s", radr_id, len(candidate_ids), candidate_ids
+    )
     if not candidate_ids:
         return
 
     candidate_profiles = _fetch_candidate_profiles(conn, candidate_ids)
+    logger.debug(
+        "Fetched candidate profiles for radr %s (count=%s): %s",
+        radr_id,
+        len(candidate_profiles or {}),
+        candidate_profiles,
+    )
     if not candidate_profiles:
         return
 
@@ -124,6 +137,12 @@ def handle(conn, job: dict[str, Any]) -> None:
         user_id: _format_profile(profile)
         for user_id, profile in candidate_profiles.items()
     }
+    logger.debug(
+        "Formatted candidates for radr %s (count=%s): %s",
+        radr_id,
+        len(formatted_candidates),
+        formatted_candidates,
+    )
 
     llm_input_candidates = [
         {
@@ -133,6 +152,13 @@ def handle(conn, job: dict[str, Any]) -> None:
         for user_id in candidate_ids
         if user_id in formatted_candidates
     ]
+
+    logger.debug(
+        "LLM input candidates for radr %s (count=%s): %s",
+        radr_id,
+        len(llm_input_candidates),
+        llm_input_candidates,
+    )
 
     if not llm_input_candidates:
         return
@@ -155,6 +181,7 @@ def handle(conn, job: dict[str, Any]) -> None:
             schema=InsightBatch,
         )
     except Exception:
+        logger.exception("Failed to parse structured response for radr %s", radr_id)
         return
 
     items = list(getattr(response, "root", getattr(response, "__root__", [])) or [])
@@ -169,6 +196,12 @@ def handle(conn, job: dict[str, Any]) -> None:
             if str(value).strip()
         ][:3]
         if len(three_things) < 1:
+            logger.warning(
+                "Skipping user %s for radr %s due to empty three_things. Raw item: %s",
+                item.user_id,
+                radr_id,
+                _serialize_insight_item(item),
+            )
             continue
 
         explanation = {
@@ -186,6 +219,12 @@ def handle(conn, job: dict[str, Any]) -> None:
         ][:5]
 
         if not explanation["why"]:
+            logger.warning(
+                "Skipping user %s for radr %s due to empty why. Raw item: %s",
+                item.user_id,
+                radr_id,
+                _serialize_insight_item(item),
+            )
             continue
 
         try:
@@ -201,7 +240,10 @@ def handle(conn, job: dict[str, Any]) -> None:
                 ],
             )
         except Exception:
-            continue
+            logger.exception(
+                "Failed to update insights for radr %s user %s", radr_id, item.user_id
+            )
+            raise
 
     remaining = fetchone(conn, REMAINING_COUNT_SQL, [radr_id])
     missing = (remaining or {}).get("missing")
@@ -280,3 +322,18 @@ def _build_prompt(opener_profile: str, candidates: list[dict[str, str]]) -> str:
     )
 
     return "\n".join(lines)
+
+
+def _serialize_insight_item(item: InsightItem) -> dict[str, Any]:
+    """Convert an InsightItem (or similar) to a serializable dictionary."""
+
+    if hasattr(item, "model_dump"):
+        return item.model_dump()  # type: ignore[return-value]
+    if hasattr(item, "dict"):
+        return item.dict()  # type: ignore[return-value]
+    return {
+        "user_id": getattr(item, "user_id", None),
+        "three_things": getattr(item, "three_things", None),
+        "explanation": getattr(item, "explanation", None),
+        "common_tags": getattr(item, "common_tags", None),
+    }

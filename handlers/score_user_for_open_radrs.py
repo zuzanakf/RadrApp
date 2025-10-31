@@ -6,9 +6,10 @@ import re
 from typing import Any, Optional, Sequence
 
 from db import execute, fetchall, fetchone
+from jobs import enqueue_job
 
 
-ADVISORY_LOCK_SQL = "select pg_advisory_xact_lock(hashtextextended(%s, 0))"
+ADVISORY_LOCK_SQL = "select pg_advisory_xact_lock(hashtextextended(%s::text, 0))"
 
 USER_EMBEDDINGS_QUERY = """
     select
@@ -50,6 +51,15 @@ UPSERT_SCORE_SQL = """
         total_score = excluded.total_score
 """
 
+PENDING_USER_INSIGHTS_EXISTS_SQL = """
+    select 1
+      from public.radr_user_scores
+     where user_id = %s
+       and lower(coalesce(status, '')) = 'pending'
+       and (three_things is null or explanation is null or common_tags is null)
+     limit 1
+"""
+
 
 def handle(conn, job: dict[str, Any]) -> None:
     payload = job["payload_json"]
@@ -79,6 +89,7 @@ def handle(conn, job: dict[str, Any]) -> None:
     if not radrs:
         return
 
+    scored_any = False
     for radr in radrs:
         radr_id = radr.get("id")
         if not radr_id:
@@ -112,6 +123,18 @@ def handle(conn, job: dict[str, Any]) -> None:
                 total,
             ],
         )
+        scored_any = True
+
+    if not scored_any:
+        return
+
+    pending = fetchone(conn, PENDING_USER_INSIGHTS_EXISTS_SQL, [user_id])
+    if pending:
+        batch_size = payload.get("insights_batch_size") or None
+        job_payload: dict[str, Any] = {"user_id": user_id}
+        if batch_size is not None:
+            job_payload["batch_size"] = batch_size
+        enqueue_job(conn, "gen_insights_for_user_batch", job_payload)
 
 
 def _dot(left: Sequence[float], right: Sequence[float]) -> float:

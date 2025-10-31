@@ -20,7 +20,7 @@ from handlers import (
     score_radr_for_checked_in_users,
     score_user_for_open_radrs,
     gen_insights_for_radr_batch,
-
+    gen_insights_for_user_batch,
 )
 
 HANDLERS = {
@@ -31,6 +31,7 @@ HANDLERS = {
     "score_radr_for_checked_in_users": score_radr_for_checked_in_users.handle,
     "score_user_for_open_radrs": score_user_for_open_radrs.handle,
     "gen_insights_for_radr_batch": gen_insights_for_radr_batch.handle,
+    "gen_insights_for_user_batch": gen_insights_for_user_batch.handle,
     # "gen_three_things": three_things.handle,
 }
 

@@ -5,6 +5,7 @@ import json
 from typing import Any, Optional, Sequence
 
 from db import execute, fetchall, fetchone
+from jobs import enqueue_job
 
 
 ADVISORY_LOCK_SQL = "select pg_advisory_xact_lock(hashtextextended(%s, 0))"
@@ -90,6 +91,8 @@ def handle(conn, job: dict[str, Any]) -> None:
     if not checkins:
         return
 
+    scored_any = False
+
     for row in checkins:
         user_id = row.get("user_id")
         if not user_id:
@@ -132,6 +135,15 @@ def handle(conn, job: dict[str, Any]) -> None:
                 overall,
                 total,
             ],
+        )
+
+        scored_any = True
+
+    if scored_any:
+        enqueue_job(
+            conn,
+            "gen_insights_for_radr_batch",
+            {"radr_id": radr_id},
         )
 
 

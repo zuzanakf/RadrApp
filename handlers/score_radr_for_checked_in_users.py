@@ -57,7 +57,7 @@ UPSERT_SCORE_SQL = """
         total_score = excluded.total_score
 """
 
-ALLOWED_STATUSES = {"open", "pending"}
+ALLOWED_STATUSES = {"open"}
 
 
 def handle(conn, job: dict[str, Any]) -> None:

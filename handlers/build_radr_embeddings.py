@@ -47,7 +47,7 @@ UPSERT_SQL_TEMPLATE = """
 """
 
 
-ALLOWED_STATUSES = {"open", "pending"}
+ALLOWED_STATUSES = {"open"}
 
 
 def handle(conn, job: dict[str, Any]) -> None:

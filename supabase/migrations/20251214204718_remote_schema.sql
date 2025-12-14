@@ -3285,6 +3285,3 @@ revoke update on table "public"."jobs" from "authenticated";
 
 CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
-CREATE TRIGGER "CV Upload Hook" AFTER INSERT ON storage.buckets FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('https://sogerjzdsfxfpuufvwcx.supabase.co/functions/v1/quick-handler', 'POST', '{"Content-type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNvZ2Vyanpkc2Z4ZnB1dWZ2d2N4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTE2MTYxOCwiZXhwIjoyMDc0NzM3NjE4fQ.lF5a1wtuKcEbwKjjsbb1G8a1pxaPVyOCtAT1nVsv6Yw","x-webhook-secret":"1B0j3o5Sb3eL7Ofrdf3AmYS8GnfCQAZK"}', '{}', '5000');
-
-

@@ -2,6 +2,10 @@
 
 RadrApp is a lightweight Python worker that powers asynchronous processing for the Radr platform. It watches the `public.jobs` table in Supabase, claims new work items, and dispatches them to dedicated job handlers. Current handlers parse CV documents and enrich the resulting profiles with vector embeddings.
 
+## FrontEnd Demo
+<img width="2556" height="1436" alt="image" src="https://github.com/user-attachments/assets/3bdcda3a-4a4f-4e9b-ad33-9c6f0b219df1" />
+<img width="2556" height="1430" alt="image" src="https://github.com/user-attachments/assets/f3786406-8d17-4e80-9268-9cb495cd0b5c" />
+
 ## Architecture Overview
 
 The worker follows a simple polling loop implemented in [`app.py`](app.py):
